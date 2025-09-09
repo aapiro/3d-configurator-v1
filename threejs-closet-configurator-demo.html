@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurador 3D de Armarios - Three.js</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        #controls {
+            width: 300px;
+            background-color: #f5f5f5;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 1px solid #ddd;
+        }
+        
+        #scene-container {
+            flex: 1;
+            position: relative;
+        }
+        
+        h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        input[type="color"] {
+            width: 100%;
+            height: 40px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="controls">
+            <h2>Configurador de Armario</h2>
+            
+            <div class="control-group">
+                <label for="width">Ancho (m): <span id="width-value">2.0</span></label>
+                <input type="range" id="width" min="1" max="5" step="0.1" value="2">
+            </div>
+            
+            <div class="control-group">
+                <label for="height">Alto (m): <span id="height-value">3.0</span></label>
+                <input type="range" id="height" min="2" max="6" step="0.1" value="3">
+            </div>
+            
+            <div class="control-group">
+                <label for="depth">Profundidad (m): <span id="depth-value">0.5</span></label>
+                <input type="range" id="depth" min="0.3" max="1" step="0.1" value="0.5">
+            </div>
+            
+            <div class="control-group">
+                <label for="levels">Número de estanterías: <span id="levels-value">4</span></label>
+                <input type="range" id="levels" min="2" max="8" step="1" value="4">
+            </div>
+            
+            <div class="control-group">
+                <label for="color">Color:</label>
+                <input type="color" id="color" value="#8B4513">
+            </div>
+        </div>
+        
+        <div id="scene-container">
+            <div id="info">Haz clic y arrastra para rotar | Rueda del mouse para acercar/alejar</div>
+        </div>
+    </div>
+
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/examples/js/controls/OrbitControls.min.js"></script>
+    
+    <script>
+        // Variables globales
+        let scene, camera, renderer, controls;
+        let shelfMesh, levels = [];
+        
+        // Inicializar la escena
+        function init() {
+            // Crear escena
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xe0e0e0);
+            
+            // Crear cámara
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(5, 3, 5);
+            
+            // Crear renderizador
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(document.getElementById('scene-container').offsetWidth, 
+                            document.getElementById('scene-container').offsetHeight);
+            renderer.shadowMap.enabled = true;
+            document.getElementById('scene-container').appendChild(renderer.domElement);
+            
+            // Añadir controles orbitales
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            
+            // Luz ambiente
+            const ambientLight = new THREE.AmbientLight(0x404040, 1);
+            scene.add(ambientLight);
+            
+            // Luz direccional
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            // Suelo
+            const groundGeometry = new THREE.PlaneGeometry(20, 20);
+            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xf0f0f0 });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = -1.5;
+            ground.receiveShadow = true;
+            scene.add(ground);
+            
+            // Crear el armario inicial
+            createShelf();
+            
+            // Event listeners para controles
+            setupEventListeners();
+            
+            // Iniciar animación
+            animate();
+        }
+        
+        function createShelf(width = 2, height = 3, depth = 0.5, levelsCount = 4, color = '#8B4513') {
+            // Eliminar el armario anterior si existe
+            if (shelfMesh) scene.remove(shelfMesh);
+            levels.forEach(level => scene.remove(level));
+            levels = [];
+            
+            // Crear geometría del armario
+            const shelfGeometry = new THREE.BoxGeometry(width, height, depth);
+            const shelfMaterial = new THREE.MeshStandardMaterial({ 
+                color: color,
+                metalness: 0.2,
+                roughness: 0.5
+            });
+            
+            shelfMesh = new THREE.Mesh(shelfGeometry, shelfMaterial);
+            shelfMesh.position.set(0, 0, 0);
+            shelfMesh.castShadow = true;
+            shelfMesh.receiveShadow = true;
+            scene.add(shelfMesh);
+            
+            // Crear soportes laterales
+            const sideSupportGeometry = new THREE.BoxGeometry(width, 0.1, 0.2);
+            const sideSupportMaterial = new THREE.MeshStandardMaterial({ color: '#8B4513' });
+            
+            const leftSide = new THREE.Mesh(sideSupportGeometry, sideSupportMaterial);
+            leftSide.position.set(0, height/2, -depth/2 + 0.1);
+            leftSide.castShadow = true;
+            scene.add(leftSide);
+            
+            const rightSide = new THREE.Mesh(sideSupportGeometry, sideSupportMaterial);
+            rightSide.position.set(0, height/2, depth/2 - 0.1);
+            rightSide.castShadow = true;
+            scene.add(rightSide);
+            
+            // Crear soporte inferior
+            const bottomSupportGeometry = new THREE.BoxGeometry(width, 0.2, depth);
+            const bottomSupportMaterial = new THREE.MeshStandardMaterial({ color: '#8B4513' });
+            
+            const bottomSupport = new THREE.Mesh(bottomSupportGeometry, bottomSupportMaterial);
+            bottomSupport.position.set(0, -height/2 + 0.1, 0);
+            bottomSupport.castShadow = true;
+            scene.add(bottomSupport);
+            
+            // Crear estanterías internas
+            for (let i = 0; i < levelsCount; i++) {
+                const levelHeight = height / (levelsCount + 1);
+                const levelY = -height/2 + (i+1) * levelHeight;
+                
+                const shelfLevelGeometry = new THREE.BoxGeometry(width - 0.2, 0.1, depth);
+                const shelfLevelMaterial = new THREE.MeshStandardMaterial({ color: '#8B4513' });
+                
+                const shelfLevel = new THREE.Mesh(shelfLevelGeometry, shelfLevelMaterial);
+                shelfLevel.position.set(0, levelY, 0);
+                shelfLevel.castShadow = true;
+                scene.add(shelfLevel);
+                levels.push(shelfLevel);
+            }
+        }
+        
+        function setupEventListeners() {
+            // Event listeners para los controles
+            document.getElementById('width').addEventListener('input', function(e) {
+                const width = parseFloat(e.target.value);
+                document.getElementById('width-value').textContent = width.toFixed(1);
+                updateShelf();
+            });
+            
+            document.getElementById('height').addEventListener('input', function(e) {
+                const height = parseFloat(e.target.value);
+                document.getElementById('height-value').textContent = height.toFixed(1);
+                updateShelf();
+            });
+            
+            document.getElementById('depth').addEventListener('input', function(e) {
+                const depth = parseFloat(e.target.value);
+                document.getElementById('depth-value').textContent = depth.toFixed(1);
+                updateShelf();
+            });
+            
+            document.getElementById('levels').addEventListener('input', function(e) {
+                const levelsCount = parseInt(e.target.value);
+                document.getElementById('levels-value').textContent = levelsCount;
+                updateShelf();
+            });
+            
+            document.getElementById('color').addEventListener('input', function(e) {
+                updateShelf();
+            });
+        }
+        
+        function updateShelf() {
+            const width = parseFloat(document.getElementById('width').value);
+            const height = parseFloat(document.getElementById('height').value);
+            const depth = parseFloat(document.getElementById('depth').value);
+            const levelsCount = parseInt(document.getElementById('levels').value);
+            const color = document.getElementById('color').value;
+            
+            createShelf(width, height, depth, levelsCount, color);
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        // Manejar redimensionamiento de ventana
+        window.addEventListener('resize', function() {
+            camera.aspect = document.getElementById('scene-container').offsetWidth / 
+                           document.getElementById('scene-container').offsetHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(document.getElementById('scene-container').offsetWidth, 
+                           document.getElementById('scene-container').offsetHeight);
+        });
+        
+        // Iniciar la aplicación
+        init();
+    </script>
+</body>
+</html>
